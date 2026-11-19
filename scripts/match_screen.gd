@@ -34,6 +34,41 @@ var b_fast: Button
 var b_auto: Button
 var Timing = preload("res://scripts/timing.gd")
 var Shot = preload("res://scripts/shot.gd")
+var Pitch = preload("res://scripts/pitch.gd")
+
+func _live(inv: String, att: int) -> void:
+	var p = G.S.p
+	var P = Pitch.new()
+	var parts: PackedStringArray = str(p.name).strip_edges().split(" ", false)
+	var short := (parts[parts.size() - 1] if parts.size() > 0 else "SEN").replace("i", "İ").to_upper()
+	var H = sd.me if home else sd.op; var A = sd.op if home else sd.me
+	var hs: int = score.me if home else score.op; var as_: int = score.op if home else score.me
+	P.setup({"me": {"name": sd.me.name, "col": sd.me.col, "str": sd.me.str}, "op": {"name": sd.op.name, "col": sd.op.col, "str": sd.op.str}, "attack": att, "involve": inv,
+		"upos": p.pos, "unum": int(p.num), "uname": p.name, "uname_short": short, "auto": auto, "on": on,
+		"ustats": {"sut": G.eff("sut"), "pas": G.eff("pas"), "drip": G.eff("drip"), "hiz": G.eff("hiz"), "sav": G.eff("sav")},
+		"title": "%d'   %s %d - %d %s" % [minute, H.name, hs, as_, A.name]})
+	var r
+	if fast and (inv == "none" or auto):
+		r = P.simulate(); P.free()
+	else:
+		add_child(P); P.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+		r = await P.finished
+	if r.goal == "me":
+		if on and r.u_goal: g += 1
+		if on and r.u_assist: a += 1
+		var txt: String = r.txt
+		if r.u_goal: txt = "%s golü attı." % p.name
+		_goal("me", "GOL. " + txt)
+	elif r.goal == "op":
+		_goal("op", "Gol: %s. %s" % [sd.op.name, r.txt])
+	else:
+		feed(r.txt)
+	if inv != "none":
+		_addr(r.rd)
+		if r.u_shot == "save": feed("Şutun kaleciden döndü.")
+		elif r.u_shot == "miss": feed("Şutun auta gitti.")
+	elif on and (r.u_goal or r.u_assist): _addr(r.rd)
+	await _wait(.05 if fast else .35)
 
 const FILL := ["{op} tehlikeli bir korner kullandı, savunma uzaklaştırdı.", "Orta sahada sert mücadele, hakem faul çaldı.", "{me} topa sahip, oyunu sabırla kuruyor.", "{op} kalecisi uzun bir degajla oyunu başlattı.", "Tribünler coştu, müthiş bir atmosfer var.", "{op} oyuncusu sarı kart gördü.", "{me} soldan etkili bir atak geliştirdi, top auta çıktı.", "{op} uzaktan şut denedi, top üstten auta gitti.", "Oyun bir süre durdu, sakatlanan oyuncuya müdahale ediliyor.", "{me} kalecisi kritik bir kurtarış yaptı.", "{op} ofsayta yakalandı.", "Hakem avantaja bıraktı, oyun devam ediyor."]
 
@@ -46,18 +81,18 @@ func begin(mm: Dictionary) -> void:
 	var me_s: float = sd.me.str; var op_s: float = sd.op.str
 	var will_play := sel == "xi" or sel == "sub"
 	in_min = 0 if sel == "xi" else (G.RI(55, 72) if sel == "sub" else 99)
-	var lP := 1.28 * pow(me_s / op_s, 1.7) * (1.1 if home else .9) * (.74 if will_play else 1.0)
-	var lO := 1.28 * pow(op_s / me_s, 1.7) * (.9 if home else 1.1) * (.75 if will_play and p.pos == "DF" else 1.0)
+	var lP := 3.4 * pow(me_s / op_s, .9) * (1.08 if home else .93) * (.72 if will_play else 1.0)
+	var lO := 3.4 * pow(op_s / me_s, .9) * (.93 if home else 1.08) * (.8 if will_play and p.pos == "DF" else 1.0)
 	var eu_me: bool = me_s >= 73 and m.type != "nat" and m.type != "tour"
 	for i in 6: mates.append(G.gen_name(eu_me))
 	if sd.me.has("star"): mates[0] = sd.me.star.name
 	for i in 4: ops_n.append(G.gen_name(op_s >= 73))
 	if sd.op.has("star"): ops_n[0] = sd.op.star.name
-	for i in G.poisson(clamp(lP, .15, 3.5)): tl.append({"min": G.RI(2, 90), "k": "aig", "s": "me"})
-	for i in G.poisson(clamp(lO, .15, 3.5)): tl.append({"min": G.RI(2, 90), "k": "aig", "s": "op"})
+	for i in G.poisson(clamp(lP, .5, 7)): tl.append({"min": G.RI(2, 90), "k": "ch", "s": "me"})
+	for i in G.poisson(clamp(lO, .5, 7)): tl.append({"min": G.RI(2, 90), "k": "ch", "s": "op"})
 	if sel == "xi" and p.energy < 45: out_min = G.RI(62, 78)
 	if will_play:
-		var n := (G.RI(3, 5) - (1 if out_min < 90 else 0)) if sel == "xi" else G.RI(1, 2)
+		var n := (G.RI(2, 4) - (1 if out_min < 90 else 0)) if sel == "xi" else G.RI(1, 2)
 		var used := {}
 		for i in n:
 			var mn := 0; var tries := 0
@@ -176,6 +211,9 @@ func _handle(ev: Dictionary) -> void:
 			await _wait(.08 if fast else .7)
 		"mom":
 			if on: await _moment(ev.t)
+		"ch":
+			feed(("%s atağa çıkıyor." % sd.me.name) if ev.s == "me" else ("%s tehlikeli geliyor." % sd.op.name))
+			await _live("none", 0 if ev.s == "me" else 1)
 
 func _op() -> float: return sd.op.str
 func _efac() -> float:
@@ -247,7 +285,13 @@ func _flash(t: String) -> void:
 func _moment(t: String) -> void:
 	var p = G.S.p
 	match t:
-		"shot":
+		"shot", "dribble", "pass":
+			feed("Top sana doğru geliyor, hazır ol." , "me")
+			await _live("attack", 0)
+		"tackle":
+			feed("Rakip hücuma çıktı, savunmayı sen yöneteceksin.", "me")
+			await _live("defend", 1)
+		"_shot_old":
 			var opts := [["close", 4], ["box", 5], ["long", 1]] if p.pos == "FV" else ([["box", 3], ["long", 6], ["close", 1]] if p.pos == "OS" else [["box", 5], ["close", 3], ["long", 2]])
 			var k: String = G.wpick(opts)
 			await _do_shot(k, "sut", {"close": "Savunmanın arkasına sarktın, kaleciyle karşı karşıyasın.", "box": "Ceza sahasında topla buluştun.", "long": "Ceza sahası dışında boş alan buldun."}[k])
@@ -266,7 +310,7 @@ func _moment(t: String) -> void:
 			else:
 				_addr(-.15 if gr == "fail" else 0.0); feed("Topa iyi temas edemedin." if gr == "fail" else "Kafa vuruşun kaleciden döndü.")
 			await _wait(.06 if fast else .6)
-		"dribble":
+		"_dribble_old":
 			feed("Rakip savunmacıyla bire birsin.", "me")
 			var gr: String = _auto_g("drip") if auto else await _tbar("Çalım at", "Doğru anda hareket et ve rakibini geç.", _zone("drip"), _spd(), "Çalım")
 			if gr == "fail":
@@ -274,7 +318,7 @@ func _moment(t: String) -> void:
 			_addr(.35 if gr == "perfect" else .2); feed("Rakibini yerde bıraktın." if gr == "perfect" else "Rakibini geçtin.", "me")
 			if gr == "perfect" or randf() < .65: await _do_shot("close" if gr == "perfect" else "box", "sut", "Şimdi şut zamanı.")
 			else: feed("Ortaya çevirdin ama savunma uzaklaştırdı.")
-		"pass":
+		"_pass_old":
 			feed("Topla buluştun, takım arkadaşların koşu yapıyor.", "me")
 			var opt := ""
 			if auto: opt = ["kisa", "ara", "orta"][randi() % 3]
@@ -290,7 +334,7 @@ func _moment(t: String) -> void:
 			else:
 				_addr(.1 if opt == "kisa" else .2); feed("Başarılı pas, top takımında." if opt == "kisa" else "%s topla buluştu ama şutu karşılandı." % mate)
 			await _wait(.06 if fast else .5)
-		"tackle":
+		"_tackle_old":
 			var at: String = G.pick(ops_n)
 			feed("%s hızla kaleye ilerliyor, müdahale et." % at, "me")
 			var gr: String = _auto_g("sav") if auto else await _tbar("Müdahale", "Doğru anda kay, topu temiz al.", _zone("sav"), _spd() * 1.05, "Kay")
