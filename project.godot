@@ -1,0 +1,40 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="Efsane Yolu"
+config/description="Futbol kariyer oyunu"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.3", "Mobile")
+config/icon="res://icon.svg"
+boot_splash/bg_color=Color(0.0392, 0.1647, 0.1255, 1)
+boot_splash/show_image=false
+
+[autoload]
+
+G="*res://scripts/game.gd"
+Sfx="*res://scripts/sfx.gd"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[gui]
+
+common/drag_threshold=12
+
+[input_devices]
+
+pointing/emulate_mouse_from_touch=true
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
+environment/defaults/default_clear_color=Color(0.0588, 0.2392, 0.1804, 1)
