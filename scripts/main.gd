@@ -57,14 +57,18 @@ func clear(n: Node) -> void:
 
 # ================= bildirim =================
 func toast(t: String) -> void:
-	var p := UI.panel(UI.PAPER, 6, 0, Color.TRANSPARENT, Vector4(30, 20, 28, 20))
+	var p := UI.panel(Color("1E2560"), 18, 0, Color.TRANSPARENT, Vector4(30, 20, 28, 20))
 	var s: StyleBoxFlat = p.get_theme_stylebox("panel")
-	s.border_width_left = 14; s.border_color = UI.YEL; s.shadow_color = Color(0, 0, 0, .3); s.shadow_size = 0; s.shadow_offset = Vector2(0, 10)
-	p.add_child(UI.lbl(t, 29, UI.INK, false, 600))
+	s.border_width_left = 10; s.border_color = UI.ACC; s.shadow_color = Color(0, 0, 0, .45); s.shadow_size = 16; s.shadow_offset = Vector2(0, 8)
+	var h := UI.hbox(16); h.add_child(UI.icon("star", 34, UI.ACC)); var l := UI.lbl(t, 28, UI.CHALK, false, 600); l.size_flags_horizontal = SIZE_EXPAND_FILL; h.add_child(l)
+	p.add_child(h)
 	p.mouse_filter = MOUSE_FILTER_IGNORE
 	toast_box.add_child(p)
+	Sfx.play("notify")
 	if toast_box.get_child_count() > 3: toast_box.get_child(0).queue_free()
+	p.modulate.a = 0
 	var tw := p.create_tween()
+	tw.tween_property(p, "modulate:a", 1.0, .15)
 	tw.tween_interval(2.6); tw.tween_property(p, "modulate:a", 0.0, .3); tw.tween_callback(p.queue_free)
 
 # ================= kâğıt pencere =================
@@ -75,11 +79,10 @@ func open_sheet(lock := false) -> VBoxContainer:
 	sheet_layer.add_child(dim); dim.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	dim.gui_input.connect(func(e):
 		if e is InputEventMouseButton and e.pressed and not sheet_lock: close_sheet())
-	var club := Color(G.my_team().col) if G.S != null else UI.YEL
-	if UI.lum(club) > .8: club = UI.YEL
-	var pan := UI.panel(UI.PAPER, 12, 0, Color.TRANSPARENT, Vector4(36, 40, 36, 48))
+	var pan := UI.panel(UI.PAPER, 34, 0, Color.TRANSPARENT, Vector4(36, 44, 36, 48))
 	var st: StyleBoxFlat = pan.get_theme_stylebox("panel")
-	st.corner_radius_bottom_left = 0; st.corner_radius_bottom_right = 0; st.border_width_top = 16; st.border_color = club
+	st.corner_radius_bottom_left = 0; st.corner_radius_bottom_right = 0; st.border_width_top = 5; st.border_color = UI.ACC
+	st.shadow_color = Color(0, 0, 0, .5); st.shadow_size = 30
 	sheet_layer.add_child(pan)
 	pan.set_anchors_and_offsets_preset(PRESET_BOTTOM_WIDE)
 	var sc := ScrollContainer.new(); sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED; sc.scroll_deadzone = 18
@@ -88,7 +91,9 @@ func open_sheet(lock := false) -> VBoxContainer:
 	sc.add_child(v)
 	pan.set_meta("sc", sc)
 	v.resized.connect(func(): _fit_sheet(pan, v))
-	pan.position.y = get_viewport_rect().size.y
+	pan.modulate.a = 0
+	var tw := pan.create_tween(); tw.tween_property(pan, "modulate:a", 1.0, .16)
+	Sfx.play("confirm")
 	return v
 
 func _fit_sheet(pan: PanelContainer, v: VBoxContainer) -> void:
@@ -104,8 +109,9 @@ func close_sheet(silent := false) -> void:
 	if not silent: call_deferred("show_pending")
 
 func sheet_title(v: VBoxContainer, t: String, body: String = "") -> void:
-	v.add_child(UI.lbl(t, 68, UI.INK, true, 900))
-	if body != "": v.add_child(UI.lbl(body, 31, UI.INK2, false, 500))
+	v.add_child(UI.lbl(t.to_upper(), 58, UI.CHALK, true, 900))
+	var bar := ColorRect.new(); bar.color = UI.ACC; bar.custom_minimum_size = Vector2(90, 6); bar.size_flags_horizontal = SIZE_SHRINK_BEGIN; v.add_child(bar)
+	if body != "": v.add_child(UI.lbl(body, 30, UI.INK2, false, 500))
 
 func show_pending() -> void:
 	if G.S == null or G.S.pend.is_empty() or sheet_layer.get_child_count() > 0: return
@@ -133,146 +139,174 @@ func render() -> void:
 		"life": _life(body)
 		"lig": _lig(body)
 		"car": _car(body)
-	content.add_child(UI.margin(body, 32, 8, 32, 60))
+	var m := UI.margin(body, 26, 18, 26, 60)
+	content.add_child(m)
+	m.modulate.a = 0
+	var tw := m.create_tween(); tw.tween_property(m, "modulate:a", 1.0, .2)
 
 func _header() -> void:
 	clear(header)
 	var p = G.S.p; var t := G.my_team()
-	var v := UI.vbox(16)
-	var r1 := UI.hbox(16)
-	var l := UI.vbox(4); l.size_flags_horizontal = SIZE_EXPAND_FILL
-	var nm := UI.hbox(12); nm.add_child(UI.lbl(p.name, 48, UI.CHALK, true, 800, HORIZONTAL_ALIGNMENT_LEFT, false))
+	var hs: StyleBoxFlat = header.get_theme_stylebox("panel"); hs.bg_color = Color(UI.DEEP, .92); hs.border_width_bottom = 3; hs.border_color = Color(UI.ACC, .6)
+	hs.content_margin_top = 20; hs.content_margin_bottom = 18; hs.content_margin_left = 26; hs.content_margin_right = 26
+	var v := UI.vbox(14)
+	var r1 := UI.hbox(14)
+	var badge := UI.panel(UI.ACC, 14, 0, Color.TRANSPARENT, Vector4(12, 2, 12, 2))
+	badge.add_child(UI.lbl(str(G.ovr()), 40, UI.DARK, true, 900, HORIZONTAL_ALIGNMENT_CENTER, false))
+	badge.size_flags_vertical = SIZE_SHRINK_CENTER
+	r1.add_child(badge)
+	var l := UI.vbox(0); l.size_flags_horizontal = SIZE_EXPAND_FILL
+	var nm := UI.hbox(10); nm.add_child(UI.lbl(str(p.name).to_upper(), 38, UI.CHALK, true, 900, HORIZONTAL_ALIGNMENT_LEFT, false))
 	if p.captain: nm.add_child(UI.chip("Kaptan", "y"))
 	l.add_child(nm)
-	l.add_child(UI.lbl("%s, %s" % [t.name, G.TIERS[int(t.tier)].n], 26, UI.CHALK2))
+	l.add_child(UI.lbl(t.name, 23, UI.CHALK2, false, 600, HORIZONTAL_ALIGNMENT_LEFT, false))
 	r1.add_child(l)
-	var r := UI.vbox(4)
-	r.add_child(UI.lbl(G.fmt(p.money), 54, UI.YEL, true, 800, HORIZONTAL_ALIGNMENT_RIGHT, false))
-	var wk := "Dünya Şampiyonası" if G.S.phase == "tour" else "Sezon %d, hafta %d/%d" % [G.S.season, min(int(G.S.week), G.LEAGUE_WEEKS), G.LEAGUE_WEEKS]
-	r.add_child(UI.lbl(wk, 25, UI.CHALK2, false, 500, HORIZONTAL_ALIGNMENT_RIGHT, false))
-	r1.add_child(r)
+	r1.add_child(_pill("money", G.fmt(p.money), UI.YEL))
 	v.add_child(r1)
-	var r2 := UI.hbox(28)
-	r2.add_child(_meter("Enerji %d" % int(p.energy), p.energy, UI.RED if p.energy < 35 else UI.CHALK))
-	r2.add_child(_meter("Moral %d" % int(p.moral), p.moral, UI.RED if p.moral < 30 else UI.YEL))
-	if G.S.ui.tab != "hub":
-		var ob := UI.panel(Color.TRANSPARENT, 0, 4, UI.CHALK, Vector4(16, 2, 16, 4))
-		var ov := UI.vbox(-6); ov.add_child(UI.lbl(str(G.ovr()), 48, UI.CHALK, true, 900, HORIZONTAL_ALIGNMENT_CENTER, false)); ov.add_child(UI.lbl("güç", 20, UI.CHALK2, false, 600, HORIZONTAL_ALIGNMENT_CENTER, false))
-		ob.add_child(ov); r2.add_child(ob)
+	var r2 := UI.hbox(20)
+	r2.add_child(_meter("bolt", int(p.energy), p.energy, UI.RED if p.energy < 35 else UI.ACC))
+	r2.add_child(_meter("smile", int(p.moral), p.moral, UI.RED if p.moral < 30 else UI.YEL))
+	var wk := "DÜNYA ŞAMPİYONASI" if G.S.phase == "tour" else "S%d  •  H%d/%d" % [G.S.season, min(int(G.S.week), G.LEAGUE_WEEKS), G.LEAGUE_WEEKS]
+	r2.add_child(UI.lbl(wk, 26, UI.CHALK2, true, 800, HORIZONTAL_ALIGNMENT_RIGHT, false))
 	v.add_child(r2)
-	var wrap := UI.vbox(0); wrap.add_child(v)
-	header.add_child(wrap)
-	# tebeşir çizgisi
-	var hs: StyleBoxFlat = header.get_theme_stylebox("panel"); hs.border_width_bottom = 6; hs.border_color = UI.CHALK
+	header.add_child(v)
 
-func _meter(t: String, v: float, c: Color) -> VBoxContainer:
-	var m := UI.vbox(8); m.size_flags_horizontal = SIZE_EXPAND_FILL; m.size_flags_vertical = SIZE_SHRINK_END
-	m.add_child(UI.lbl(t, 24, UI.CHALK2, false, 600)); m.add_child(UI.Bar.new(v, c, 8))
+func _pill(ic: String, txt: String, col: Color) -> PanelContainer:
+	var pl := UI.panel(Color(0, 0, 0, .35), 30, 2, Color(col, .5), Vector4(14, 6, 20, 6))
+	var h := UI.hbox(8); h.add_child(UI.icon(ic, 32, col)); h.add_child(UI.lbl(txt, 32, UI.CHALK, true, 900, HORIZONTAL_ALIGNMENT_LEFT, false))
+	pl.add_child(h); pl.size_flags_vertical = SIZE_SHRINK_CENTER
+	return pl
+
+func _meter(ic: String, n: int, v: float, c: Color) -> HBoxContainer:
+	var m := UI.hbox(8); m.size_flags_horizontal = SIZE_EXPAND_FILL
+	m.add_child(UI.icon(ic, 30, c))
+	var b := UI.Bar.new(v, c, 10); b.size_flags_horizontal = SIZE_EXPAND_FILL; b.size_flags_vertical = SIZE_SHRINK_CENTER
+	m.add_child(b)
+	m.add_child(UI.lbl(str(n), 24, UI.CHALK, true, 800, HORIZONTAL_ALIGNMENT_LEFT, false))
 	return m
 
 func _nav() -> void:
 	clear(nav)
-	var ns: StyleBoxFlat = nav.get_theme_stylebox("panel"); ns.border_width_top = 6; ns.border_color = UI.CHALK
+	var ns: StyleBoxFlat = nav.get_theme_stylebox("panel"); ns.bg_color = Color(UI.DEEP, .96); ns.border_width_top = 2; ns.border_color = Color(1, 1, 1, .08)
 	var h := UI.hbox(0)
-	var tabs := [["hub", "Hafta"], ["dev", "Gelişim"], ["life", "Yaşam"], ["lig", "Lig"], ["car", "Kariyer"]]
+	var tabs := [["hub", "home", "Ana Sayfa"], ["dev", "dev", "Gelişim"], ["life", "shop", "Yaşam"], ["lig", "table", "Lig"], ["car", "person", "Kariyer"]]
 	for x in tabs:
 		var on: bool = G.S.ui.tab == x[0]
 		var b := Button.new(); b.flat = true; b.focus_mode = FOCUS_NONE; b.size_flags_horizontal = SIZE_EXPAND_FILL
-		b.custom_minimum_size = Vector2(0, 104)
+		b.custom_minimum_size = Vector2(0, 118)
 		var e := StyleBoxEmpty.new()
 		for st in ["normal", "hover", "pressed", "focus"]: b.add_theme_stylebox_override(st, e)
-		var txt: String = x[1]
-		if x[0] == "dev" and G.S.p.gp > 0: txt += " " + str(G.S.p.gp)
-		var l := UI.lbl(txt, 36, UI.CHALK if on else UI.CHALK2, true, 700, HORIZONTAL_ALIGNMENT_CENTER, false)
-		b.add_child(l); l.set_anchors_and_offsets_preset(PRESET_FULL_RECT); l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		if on:
-			var bar := ColorRect.new(); bar.color = UI.YEL; b.add_child(bar); bar.mouse_filter = MOUSE_FILTER_IGNORE
-			bar.anchor_left = .2; bar.anchor_right = .8; bar.offset_top = -6; bar.offset_bottom = 4
+		var v := UI.vbox(0); v.mouse_filter = MOUSE_FILTER_IGNORE; v.alignment = BoxContainer.ALIGNMENT_CENTER
+		var icw := UI.panel(Color(UI.ACC, .16) if on else Color.TRANSPARENT, 30, 0, Color.TRANSPARENT, Vector4(22, 4, 22, 4))
+		icw.size_flags_horizontal = SIZE_SHRINK_CENTER; icw.mouse_filter = MOUSE_FILTER_IGNORE
+		icw.add_child(UI.icon(x[1], 46, UI.ACC if on else UI.CHALK2))
+		v.add_child(icw)
+		var txt: String = x[2]
+		if x[0] == "dev" and G.S.p.gp > 0: txt += " (%d)" % G.S.p.gp
+		v.add_child(UI.lbl(txt.to_upper(), 21, UI.CHALK if on else UI.CHALK2, true, 800, HORIZONTAL_ALIGNMENT_CENTER, false))
+		b.add_child(v); v.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 		var id: String = x[0]
 		b.pressed.connect(func(): G.S.ui.tab = id; Sfx.play("tap"); render(); scroll.scroll_vertical = 0)
 		h.add_child(b)
-	var m := UI.margin(h, 0, 0, 0, 0)
-	nav.add_child(m)
+	nav.add_child(UI.margin(h, 6, 4, 6, 8))
 
 func _sec(body: VBoxContainer, title: String, small := "", first := false) -> VBoxContainer:
-	if not first: body.add_child(UI.rule(UI.LINE, 4))
+	var c := UI.card()
 	var s := UI.section(title, small)
-	body.add_child(UI.margin(s, 0, 34, 0, 40))
+	c.add_child(s)
+	body.add_child(UI.margin(c, 0, 0 if first else 24, 0, 0))
 	return s
 
 # ================= SEKMELER =================
-func _hub(body: VBoxContainer) -> void:
+func _card_data() -> Dictionary:
 	var p = G.S.p; var t := G.my_team()
-	# forma kahraman alanı
-	var kit := UI.hbox(32)
-	kit.add_child(UI.Jersey.new(p.name, int(p.num), Color(t.col), int(t.get("pat", int(t.id) % 5)), 300))
-	var side := UI.vbox(4); side.size_flags_horizontal = SIZE_EXPAND_FILL; side.alignment = BoxContainer.ALIGNMENT_CENTER
-	var big := UI.hbox(10)
-	big.add_child(UI.lbl(str(G.ovr()), 176, UI.CHALK, true, 900, HORIZONTAL_ALIGNMENT_LEFT, false))
-	var gl := UI.lbl("güç", 28, UI.CHALK2, false, 600, HORIZONTAL_ALIGNMENT_LEFT, false); gl.size_flags_vertical = SIZE_SHRINK_END; big.add_child(gl)
-	side.add_child(big)
-	side.add_child(UI.lbl("%s, %d yaşında" % [G.POS[p.pos].n, p.age], 29, UI.CHALK, false, 700))
-	side.add_child(UI.lbl("Piyasa değeri %s" % G.fmt(G.market_value()), 28, UI.CHALK2))
-	side.add_child(UI.lbl("Form %s, %s takipçi" % [G.r1(G.form_avg()), G.fmtf(G.followers())], 28, UI.CHALK2))
-	kit.add_child(side)
-	body.add_child(UI.margin(kit, 0, 30, 0, 36))
-	if p.injury > 0:
-		var ip := UI.panel(UI.RED, 8, 0, Color.TRANSPARENT, Vector4(26, 18, 26, 18))
-		ip.add_child(UI.lbl("Sakatsın: %d hafta daha. Antrenman yapamazsın, maçları tribünden izlersin." % p.injury, 28, Color.WHITE, false, 600))
-		body.add_child(UI.margin(ip, 0, 0, 0, 30))
+	var nat3: String = str(p.nation).replace("İ", "I").to_upper().substr(0, 3)
+	return {"ovr": G.ovr(), "pos": {"FV": "FV", "KN": "KN", "OS": "OS", "DF": "STP"}[p.pos], "nat3": nat3, "name": str(p.name).split(" ", false)[-1] if str(p.name).split(" ", false).size() > 0 else p.name,
+		"num": int(p.num), "col": t.col, "stats": [["HIZ", G.eff("hiz")], ["ŞUT", G.eff("sut")], ["PAS", G.eff("pas")], ["DRİ", G.eff("drip")], ["DEF", G.eff("sav")], ["FİZ", G.eff("fiz")]]}
+
+func _hub(body: VBoxContainer) -> void:
+	var p = G.S.p
+	var top := UI.hbox(20)
+	var pc := UI.PlayerCard.new(_card_data(), 300)
+	pc.size_flags_vertical = SIZE_SHRINK_BEGIN
+	top.add_child(pc)
+	var right := UI.vbox(14); right.size_flags_horizontal = SIZE_EXPAND_FILL
 	if not G.S.wq.is_empty():
 		var m = G.S.wq[0]; var sd := G.match_sides(m); var sel := G.selection(m)
-		body.add_child(UI.rule())
-		var mv := UI.vbox(20)
-		var ch := UI.hbox(10)
-		ch.add_child(UI.chip(m.label, "y" if m.type == "cup" else ("p" if m.type in ["nat", "tour"] else "")))
-		ch.add_child(UI.fill())
-		ch.add_child(UI.chip(G.SELN[sel][0], G.SELN[sel][1]))
-		mv.add_child(ch)
+		var mc := UI.card(Vector4(20, 18, 20, 20))
+		var mv := UI.vbox(12)
+		mv.add_child(UI.lbl(m.label.to_upper(), 22, UI.ACC, true, 800))
 		var H = sd.me if sd.home else sd.op; var A = sd.op if sd.home else sd.me
-		var vs := UI.hbox(8)
-		vs.add_child(_side(H)); var x := UI.lbl("VS", 40, UI.CHALK2, true, 700, HORIZONTAL_ALIGNMENT_CENTER, false); x.size_flags_vertical = SIZE_SHRINK_CENTER; vs.add_child(x); vs.add_child(_side(A))
+		var vs := UI.hbox(4)
+		vs.add_child(_side(H)); var x := UI.lbl("VS", 34, UI.CHALK2, true, 900, HORIZONTAL_ALIGNMENT_CENTER, false); x.size_flags_vertical = SIZE_SHRINK_CENTER; vs.add_child(x); vs.add_child(_side(A))
 		mv.add_child(vs)
-		if G.S.wq.size() > 1: mv.add_child(UI.lbl("Bu hafta %d maç var." % G.S.wq.size(), 25, UI.CHALK2, false, 500, HORIZONTAL_ALIGNMENT_CENTER))
-		mv.add_child(UI.btn("Maça çık", "pri", func(): start_match(G.S.wq[0]), "", 54))
-		body.add_child(UI.margin(mv, 0, 34, 0, 40))
-	var s := _sec(body, "Bu haftanın planı")
+		var ch := UI.hbox(8); ch.alignment = BoxContainer.ALIGNMENT_CENTER
+		ch.add_child(UI.chip(G.SELN[sel][0], {"g": "g", "y": "y", "r": "r"}[G.SELN[sel][1]]))
+		if G.S.wq.size() > 1: ch.add_child(UI.chip("%d maç" % G.S.wq.size()))
+		mv.add_child(ch)
+		mc.add_child(mv); right.add_child(mc)
+		var play := UI.btn("Oyna", "pri", func(): start_match(G.S.wq[0]), "", 52, false, false, "play")
+		play.custom_minimum_size.y = 120
+		right.add_child(play)
+	top.add_child(right)
+	body.add_child(top)
+	if p.injury > 0:
+		var ip := UI.card(Vector4(24, 18, 24, 18), Color(UI.RED, .22))
+		var ih := UI.hbox(14); ih.add_child(UI.icon("heal", 44, UI.RED)); var il := UI.lbl("Sakatsın: %d hafta daha. Antrenman yapamazsın, maçları tribünden izlersin." % p.injury, 27, UI.CHALK, false, 600); il.size_flags_horizontal = SIZE_EXPAND_FILL; ih.add_child(il)
+		ip.add_child(ih); body.add_child(UI.margin(ip, 0, 22, 0, 0))
+	var s := _sec(body, "Bu hafta")
 	s.get_child(0).add_child(UI.Dots.new(int(p.actions)))
-	var gr := GridContainer.new(); gr.columns = 2; gr.add_theme_constant_override("h_separation", 20); gr.add_theme_constant_override("v_separation", 20)
-	var acts := [["Antrenman", "-15 enerji", "train", p.injury > 0], ["Tedavi" if p.injury > 0 else "Dinlen", "+30 enerji", "rest", false], ["Sosyal", "ün ve ilişkiler", "social", false], ["Keyif", "tatil, parti, aile", "fun", false]]
+	var gr := GridContainer.new(); gr.columns = 2; gr.add_theme_constant_override("h_separation", 16); gr.add_theme_constant_override("v_separation", 16)
+	var acts := [["Antrenman", "-15 enerji", "train", p.injury > 0, "train", Color("00E0B8")], ["Tedavi" if p.injury > 0 else "Dinlen", "+30 enerji", "rest", false, "rest", Color("3D7BFF")],
+		["Sosyal", "Ün ve ilişkiler", "social", false, "social", Color("FF3D7F")], ["Keyif", "Tatil, parti, aile", "fun", false, "fun", Color("FFC83D")]]
 	for a in acts:
 		var id: String = a[2]
-		var b := UI.btn(a[0], "out", func(): _action(id), a[1], 40, false, true)
-		b.size_flags_horizontal = SIZE_EXPAND_FILL
-		UI.set_disabled(b, p.actions <= 0 or a[3])
-		gr.add_child(b)
+		gr.add_child(_tile(a[0], a[1], a[4], a[5], func(): _action(id), p.actions <= 0 or a[3]))
 	s.add_child(gr)
 	if p.target != null and G.S.phase == "season":
 		var ts := _sec(body, "Sezon hedefi", "Hocanın beklentisi")
 		var tv := G.target_val(); var tg = p.target
-		var row := UI.hbox(); var a1 := UI.lbl("%s %s" % [str(tg.v), tg.n], 30, UI.CHALK); a1.size_flags_horizontal = SIZE_EXPAND_FILL; row.add_child(a1); row.add_child(UI.lbl(str(tv), 30, UI.CHALK, false, 700))
+		var row := UI.hbox(); var a1 := UI.lbl("%s %s" % [str(tg.v), tg.n], 30, UI.CHALK2); a1.size_flags_horizontal = SIZE_EXPAND_FILL; row.add_child(a1); row.add_child(UI.lbl(str(tv), 44, UI.CHALK, true, 900, HORIZONTAL_ALIGNMENT_RIGHT, false))
 		ts.add_child(row)
 		var pr: float = clamp(tv / float(tg.v) * 100.0, 0, 100)
-		ts.add_child(UI.Bar.new(pr, UI.YEL if pr >= 100 else UI.CHALK, 12))
+		ts.add_child(UI.Bar.new(pr, Color("3DDC84") if pr >= 100 else UI.ACC, 14))
 	var r: Array = p.ratings.slice(max(0, p.ratings.size() - 8))
 	if not r.is_empty():
 		var rs := _sec(body, "Son maçlar", "Form " + G.r1(G.form_avg()))
 		rs.add_child(UI.RBars.new(r))
 	var nsx := _sec(body, "Haberler")
-	if G.S.news.is_empty(): nsx.add_child(UI.lbl("Henüz haber yok.", 29, UI.CHALK2))
-	for i in min(7, G.S.news.size()):
+	if G.S.news.is_empty(): nsx.add_child(UI.lbl("Henüz haber yok.", 28, UI.CHALK2))
+	for i in min(6, G.S.news.size()):
 		var n = G.S.news[i]
-		var h := UI.hbox(16)
-		var w := UI.lbl(n.w, 30, UI.YEL, true, 700, HORIZONTAL_ALIGNMENT_LEFT, false); w.custom_minimum_size = Vector2(90, 0); h.add_child(w)
-		var tl := UI.lbl(n.t, 29, UI.CHALK); tl.size_flags_horizontal = SIZE_EXPAND_FILL; h.add_child(tl)
-		nsx.add_child(h); nsx.add_child(UI.rule(UI.LINE, 2))
+		var h := UI.hbox(14)
+		var wl := UI.panel(Color(UI.ACC2, .2), 12, 0, Color.TRANSPARENT, Vector4(10, 4, 10, 4)); wl.add_child(UI.lbl(n.w, 22, UI.CHALK, true, 800, HORIZONTAL_ALIGNMENT_CENTER, false)); wl.size_flags_vertical = SIZE_SHRINK_BEGIN
+		h.add_child(wl)
+		var tl := UI.lbl(n.t, 27, UI.CHALK); tl.size_flags_horizontal = SIZE_EXPAND_FILL; h.add_child(tl)
+		nsx.add_child(h)
+
+func _tile(title: String, sub: String, ic: String, col: Color, cb: Callable, dis: bool) -> Button:
+	var b := Button.new(); b.focus_mode = FOCUS_NONE; b.size_flags_horizontal = SIZE_EXPAND_FILL; b.custom_minimum_size = Vector2(0, 170)
+	var n := UI.sb(Color(col, .12), 22, 2, Color(col, .45))
+	var pr := n.duplicate(); pr.bg_color = Color(col, .28)
+	for st in ["normal", "hover", "focus"]: b.add_theme_stylebox_override(st, n)
+	b.add_theme_stylebox_override("pressed", pr); b.add_theme_stylebox_override("disabled", UI.sb(Color(1, 1, 1, .03), 22, 2, Color(1, 1, 1, .06)))
+	var v := UI.vbox(6); v.mouse_filter = MOUSE_FILTER_IGNORE
+	var icb := UI.panel(col, 40, 0, Color.TRANSPARENT, Vector4(10, 6, 10, 6)); icb.size_flags_horizontal = SIZE_SHRINK_BEGIN; icb.mouse_filter = MOUSE_FILTER_IGNORE
+	icb.add_child(UI.icon(ic, 46, UI.DARK))
+	v.add_child(icb)
+	v.add_child(UI.lbl(title.to_upper(), 36, UI.CHALK, true, 900, HORIZONTAL_ALIGNMENT_LEFT, false))
+	v.add_child(UI.lbl(sub, 22, UI.CHALK2, false, 500, HORIZONTAL_ALIGNMENT_LEFT, false))
+	b.add_child(v); v.set_anchors_and_offsets_preset(PRESET_FULL_RECT); v.offset_left = 20; v.offset_top = 18; v.offset_right = -14; v.offset_bottom = -14
+	b.disabled = dis; b.modulate = Color(1, 1, 1, .45) if dis else Color.WHITE
+	b.pressed.connect(func(): Sfx.play("tap"); cb.call())
+	return b
 
 func _side(t) -> VBoxContainer:
-	var v := UI.vbox(10); v.size_flags_horizontal = SIZE_EXPAND_FILL
-	v.add_child(UI.Crest.new(t.name, Color(t.col)))
-	v.add_child(UI.lbl(t.name, 44, UI.CHALK, true, 800, HORIZONTAL_ALIGNMENT_CENTER))
+	var v := UI.vbox(6); v.size_flags_horizontal = SIZE_EXPAND_FILL
+	v.add_child(UI.Crest.new(t.name, Color(t.col), .72))
+	v.add_child(UI.lbl(t.name, 26, UI.CHALK, true, 800, HORIZONTAL_ALIGNMENT_CENTER))
 	var n: int = clamp(int(round((t.str - 35) / 11.0)), 1, 5)
-	v.add_child(UI.lbl("●".repeat(n) + "○".repeat(5 - n), 22, UI.CHALK2, false, 500, HORIZONTAL_ALIGNMENT_CENTER))
+	v.add_child(UI.lbl("★".repeat(n) + "☆".repeat(5 - n), 20, UI.YEL, false, 600, HORIZONTAL_ALIGNMENT_CENTER))
 	return v
 
 func _dev(body: VBoxContainer) -> void:
@@ -347,14 +381,14 @@ func _buy(id: String) -> void:
 
 func _lig(body: VBoxContainer) -> void:
 	var lt: String = G.S.ui.lt; var t := G.tier()
-	var seg := UI.panel(Color.TRANSPARENT, 8, 4, UI.CHALK, Vector4(0, 0, 0, 0))
+	var seg := UI.panel(Color(1, 1, 1, .06), 34, 2, Color(1, 1, 1, .12), Vector4(6, 6, 6, 6))
 	var sh := UI.hbox(0)
 	for x in [["tablo", "Puan durumu"], ["fikstur", "Fikstür"], ["gol", "Gol krallığı"]]:
 		var on: bool = lt == x[0]
 		var b := Button.new(); b.focus_mode = FOCUS_NONE; b.size_flags_horizontal = SIZE_EXPAND_FILL; b.custom_minimum_size = Vector2(0, 80)
-		var st := UI.sb(UI.CHALK if on else Color.TRANSPARENT, 4)
+		var st := UI.sb(UI.ACC if on else Color.TRANSPARENT, 30)
 		for n in ["normal", "hover", "pressed", "focus"]: b.add_theme_stylebox_override(n, st)
-		var l := UI.lbl(x[1], 34, UI.INK if on else UI.CHALK, true, 700, HORIZONTAL_ALIGNMENT_CENTER, false); b.add_child(l); l.set_anchors_and_offsets_preset(PRESET_FULL_RECT); l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var l := UI.lbl(str(x[1]).to_upper(), 30, UI.DARK if on else UI.CHALK, true, 900, HORIZONTAL_ALIGNMENT_CENTER, false); b.add_child(l); l.set_anchors_and_offsets_preset(PRESET_FULL_RECT); l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		var id: String = x[0]
 		b.pressed.connect(func(): G.S.ui.lt = id; render())
 		sh.add_child(b)
@@ -393,10 +427,10 @@ func _lig(body: VBoxContainer) -> void:
 			s.add_child(_trow([str(i + 1), "%s\n%s" % [x.n, x.t], str(x.g)], [56, 0, 80], x.me))
 
 func _trow(cells: Array, widths: Array, me := false, head := false, zone := "", bold := []) -> Control:
-	var p := UI.panel(Color(UI.YEL, .16) if me else Color.TRANSPARENT, 0, 0, Color.TRANSPARENT, Vector4(10, 14, 6, 14))
+	var p := UI.panel(Color(UI.ACC, .16) if me else Color.TRANSPARENT, 10 if me else 0, 0, Color.TRANSPARENT, Vector4(10, 14, 6, 14))
 	var st: StyleBoxFlat = p.get_theme_stylebox("panel")
 	st.border_width_top = 0 if head else 2; st.border_color = UI.LINE
-	if zone != "": st.border_width_left = 8; st.border_color = UI.CHALK if zone == "up" else UI.RED
+	if zone != "": st.border_width_left = 8; st.border_color = UI.ACC if zone == "up" else UI.RED
 	var h := UI.hbox(4)
 	for i in cells.size():
 		var w: int = widths[i]
@@ -438,9 +472,9 @@ func _car(body: VBoxContainer) -> void:
 	var gr := GridContainer.new(); gr.columns = 3; gr.add_theme_constant_override("h_separation", 14); gr.add_theme_constant_override("v_separation", 14)
 	for a in G.ACH:
 		var on: bool = p.ach.has(a[0])
-		var cell := UI.panel(UI.YEL if on else Color.TRANSPARENT, 8, 3, UI.YEL if on else UI.LINE, Vector4(10, 18, 10, 18))
+		var cell := UI.panel(UI.YEL if on else Color(1, 1, 1, .04), 18, 2, UI.YEL if on else UI.LINE, Vector4(10, 18, 10, 18))
 		cell.size_flags_horizontal = SIZE_EXPAND_FILL
-		cell.add_child(UI.lbl(a[1], 30, UI.INK if on else UI.CHALK2, true, 700, HORIZONTAL_ALIGNMENT_CENTER))
+		cell.add_child(UI.lbl(str(a[1]).to_upper(), 26, UI.DARK if on else UI.CHALK2, true, 900, HORIZONTAL_ALIGNMENT_CENTER))
 		var desc: String = a[2]
 		cell.gui_input.connect(func(e):
 			if e is InputEventMouseButton and e.pressed: toast(desc))
@@ -711,8 +745,7 @@ func show_create() -> void:
 		var b := UI.btn(G.POS[k].n, "out", func(): CR.pos = kk; show_create(), G.POS[k].d, 44, false, true)
 		b.size_flags_horizontal = SIZE_EXPAND_FILL
 		if on:
-			var s: StyleBoxFlat = b.get_theme_stylebox("normal").duplicate(); s.border_color = UI.YEL; s.bg_color = Color(UI.YEL, .12)
-			for n in ["normal", "hover", "pressed", "focus"]: b.add_theme_stylebox_override(n, s)
+			b.kind = "chalk"
 		gr.add_child(b)
 	v.add_child(gr)
 	v.add_child(UI.spacer(10))
@@ -729,8 +762,8 @@ func show_create() -> void:
 	scroll.scroll_vertical = 0
 
 func _style_input(c: Control) -> void:
-	var s := UI.sb(Color(0, 0, 0, .22), 8, 4, UI.CHALK2, Vector4(22, 18, 22, 18))
-	var f := s.duplicate(); f.border_color = UI.YEL
+	var s := UI.sb(Color(1, 1, 1, .06), 18, 2, Color(1, 1, 1, .18), Vector4(22, 18, 22, 18))
+	var f := s.duplicate(); f.border_color = UI.ACC
 	c.add_theme_stylebox_override("normal", s); c.add_theme_stylebox_override("focus", f)
 	c.add_theme_stylebox_override("hover", s); c.add_theme_stylebox_override("pressed", s)
 	c.add_theme_font_override("font", UI.font(false, 600)); c.add_theme_font_size_override("font_size", 34)

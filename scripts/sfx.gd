@@ -1,53 +1,59 @@
 extends Node
-## Kodla üretilen ses efektleri (dosya gerekmez).
-const RATE := 22050
+## Ses: CC0 kayıtlar (Meta Open Sound) ve fiziksel modelle üretilmiş tribün/düdük sesleri.
+## sounds/ klasöründeki bir dosyayı aynı adla değiştirirsen oyun onu kullanır.
+
+const FILES := {
+	"kick": ["kick_hard", "kick_shot"], "shot": ["kick_shot"], "pass": ["pass1", "pass2"], "whoosh": ["whoosh"], "swoosh": ["swoosh"],
+	"goal": ["goal_roar"], "ooh": ["crowd_ooh"], "cheer": ["crowd_cheer"], "whistle": ["whistle"], "whistle_end": ["whistle_end"],
+	"post": ["post"], "net": ["net"], "save": ["save"],
+	"tap": ["ui_tap"], "back": ["ui_back"], "confirm": ["ui_confirm"], "notify": ["ui_notify"], "coin": ["coin"],
+	"ach": ["levelup"], "levelup": ["levelup"], "victory": ["victory"], "defeat": ["defeat"], "powerup": ["powerup"], "bad": ["ui_error"],
+}
+const VOL := {"kick": -2.0, "shot": 0.0, "pass": -5.0, "whoosh": -8.0, "swoosh": -9.0, "goal": -1.0, "ooh": -4.0, "cheer": -4.0, "whistle": -7.0, "whistle_end": -7.0,
+	"post": -4.0, "net": -5.0, "save": -3.0, "tap": -9.0, "back": -9.0, "confirm": -7.0, "notify": -8.0, "coin": -8.0, "ach": -6.0, "levelup": -6.0, "victory": -5.0, "defeat": -6.0, "powerup": -7.0, "bad": -9.0}
 var bank := {}
 var players: Array[AudioStreamPlayer] = []
+var crowd_p: AudioStreamPlayer
+var crowd_target := -80.0
 
 func _ready() -> void:
-	for i in 6:
+	for i in 10:
 		var p := AudioStreamPlayer.new(); add_child(p); players.append(p)
-	bank.tap = _synth([{"f": 660, "d": .08, "w": "tri", "v": .35}])
-	bank.bad = _synth([{"f": 220, "f2": 120, "d": .25, "w": "saw", "v": .2}])
-	bank.kick = _synth([{"noise": true, "d": .12, "v": .6, "lp": .25}, {"f": 120, "f2": 60, "d": .12, "v": .5}])
-	bank.goal = _synth([{"noise": true, "d": 2.4, "v": .45, "lp": .12, "att": .4}, {"f": 523, "d": .15, "w": "sq", "v": .12, "t0": .05}, {"f": 659, "d": .15, "w": "sq", "v": .12, "t0": .2}, {"f": 784, "d": .35, "w": "sq", "v": .12, "t0": .35}])
-	bank.save = _synth([{"noise": true, "d": .9, "v": .3, "lp": .1, "att": .2}, {"f": 300, "f2": 180, "d": .3, "v": .2}])
-	bank.whistle = _synth([{"f": 2300, "d": .18, "v": .2}, {"f": 2500, "d": .35, "v": .2, "t0": .22}])
-	bank.ach = _synth([{"f": 880, "d": .12, "w": "tri", "v": .3}, {"f": 1175, "d": .2, "w": "tri", "v": .3, "t0": .12}])
-	bank.coin = _synth([{"f": 988, "d": .08, "w": "sq", "v": .12}, {"f": 1319, "d": .2, "w": "sq", "v": .12, "t0": .08}])
+	for k in FILES:
+		var arr := []
+		for n in FILES[k]:
+			var path := "res://sounds/%s.ogg" % n
+			if ResourceLoader.exists(path): arr.append(load(path))
+		bank[k] = arr
+	crowd_p = AudioStreamPlayer.new(); add_child(crowd_p)
+	if ResourceLoader.exists("res://sounds/crowd_loop.ogg"):
+		var s: AudioStreamOggVorbis = load("res://sounds/crowd_loop.ogg")
+		s.loop = true
+		crowd_p.stream = s
+	crowd_p.volume_db = -80.0
 
-func _synth(parts: Array) -> AudioStreamWAV:
-	var total := 0.0
-	for p in parts: total = max(total, p.get("t0", 0.0) + p.d + .02)
-	var n := int(total * RATE)
-	var buf := PackedFloat32Array(); buf.resize(n)
-	for p in parts:
-		var s0 := int(p.get("t0", 0.0) * RATE); var len := int(p.d * RATE)
-		var ph := 0.0; var lp := 0.0; var att: float = p.get("att", .005)
-		for i in len:
-			var t := float(i) / RATE
-			var env: float = min(1.0, t / max(att, .001)) * exp(-4.5 * t / p.d)
-			var smp := 0.0
-			if p.get("noise", false):
-				lp += (randf() * 2 - 1 - lp) * p.get("lp", .2); smp = lp * 2.2
-			else:
-				var f: float = p.f if not p.has("f2") else lerp(float(p.f), float(p.f2), t / p.d)
-				ph += f / RATE
-				match p.get("w", "sin"):
-					"tri": smp = 1 - 4 * abs(fmod(ph, 1.0) - .5)
-					"sq": smp = 1.0 if fmod(ph, 1.0) < .5 else -1.0
-					"saw": smp = fmod(ph, 1.0) * 2 - 1
-					_: smp = sin(ph * TAU)
-			if s0 + i < n: buf[s0 + i] += smp * env * p.v
-	var bytes := PackedByteArray(); bytes.resize(n * 2)
-	for i in n: bytes.encode_s16(i * 2, int(clamp(buf[i], -1.0, 1.0) * 32000))
-	var w := AudioStreamWAV.new()
-	w.format = AudioStreamWAV.FORMAT_16_BITS; w.mix_rate = RATE; w.stereo = false; w.data = bytes
-	return w
-
-func play(k: String) -> void:
-	if not G.sound or not bank.has(k): return
+func play(k: String, vol := 0.0, pitch_var := .06) -> void:
+	if not G.sound or not bank.has(k) or bank[k].is_empty(): return
+	var st = bank[k][randi() % bank[k].size()]
+	var pl: AudioStreamPlayer = null
 	for p in players:
-		if not p.playing:
-			p.stream = bank[k]; p.play(); return
-	players[0].stream = bank[k]; players[0].play()
+		if not p.playing: pl = p; break
+	if pl == null: pl = players[0]
+	pl.stream = st
+	pl.volume_db = VOL.get(k, -6.0) + vol
+	pl.pitch_scale = 1.0 + randf_range(-pitch_var, pitch_var)
+	pl.play()
+
+## Tribün ambiyansı: on=true maç sırasında; level 0..1 heyecan
+func crowd(on: bool, level := .5) -> void:
+	if crowd_p.stream == null: return
+	if on and G.sound:
+		crowd_target = lerp(-24.0, -9.0, clamp(level, 0, 1))
+		if not crowd_p.playing: crowd_p.volume_db = -40.0; crowd_p.play()
+	else:
+		crowd_target = -80.0
+
+func _process(dt: float) -> void:
+	if crowd_p.playing:
+		crowd_p.volume_db = lerp(crowd_p.volume_db, crowd_target, clamp(dt * 2.5, 0, 1))
+		if crowd_target <= -79 and crowd_p.volume_db < -60: crowd_p.stop()

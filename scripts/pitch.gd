@@ -8,6 +8,7 @@ const PL := 105.0
 const GHW := 3.66
 const GH := 2.44
 const SEQ_MAX := 22.0
+const SEQ_USER := 32.0
 
 class Ag:
 	var team := 0
@@ -46,6 +47,7 @@ var t := 0.0
 var dec_t := 0.0
 var forced_at := 1.5
 var forced_done := false
+var forced_live := false
 var state := "play"     # play | end | replay
 var end_t := 0.0
 var res := {"goal": "", "u_goal": false, "u_assist": false, "rd": 0.0, "txt": "", "u_shot": "", "u_touch": false}
@@ -53,6 +55,10 @@ var msg := ""
 var msg_col := Color.WHITE
 var msg_until := 0.0
 var u_target = null
+var burst := 0.0
+var trail: Array = []
+var follow := false
+var press_t := 0
 var u_drag := []
 var u_hint := ""
 var frames: Array = []
@@ -148,7 +154,8 @@ func step(dt: float) -> void:
 		_move_all(dt); _ball(dt)
 		return
 	t += dt
-	if t > SEQ_MAX: _end("", "Atak sonuçsuz kaldı.", 0.6); return
+	if t > (SEQ_USER if cfg.get("involve", "none") != "none" else SEQ_MAX): _end("", "Atak sonuçsuz kaldı.", 0.6); return
+	burst = max(0.0, burst - dt)
 	for a in ag:
 		a.stun = max(0.0, a.stun - dt); a.tk_cd = max(0.0, a.tk_cd - dt)
 	_targets()
@@ -156,6 +163,9 @@ func step(dt: float) -> void:
 	if carrier != null: _carrier(dt)
 	_ball(dt)
 	if not headless:
+		if carrier == null and bvel.length() > 8: trail.append([bpos, bz])
+		elif carrier != null: trail.clear()
+		if trail.size() > 40: trail.pop_front()
 		frames.append(_snap())
 		if frames.size() > 260: frames.pop_front()
 
@@ -219,7 +229,7 @@ func _move_all(dt: float) -> void:
 		if a.stun > 0:
 			a.vel = a.vel.lerp(Vector2.ZERO, dt * 5); a.pos += a.vel * dt; continue
 		var d: Vector2 = a.tgt - a.pos
-		var mx: float = a.spd * (.86 if a == carrier else 1.0)
+		var mx: float = a.spd * (.88 if a == carrier else 1.0) * (1.7 if a.user and burst > 0 else 1.0)
 		var want: Vector2 = d.normalized() * min(mx, d.length() * 2.2) if d.length() > .05 else Vector2.ZERO
 		a.vel = a.vel.lerp(want, clamp(dt * 5, 0, 1))
 		a.pos += a.vel * dt
@@ -245,21 +255,21 @@ func _carrier(dt: float) -> void:
 		_tackles(c); return
 	# zorunlu pas: kullanıcıyı oyuna sok
 	if cfg.get("involve", "") == "attack" and not forced_done and c.team == 0 and not c.user and t > forced_at and user_ag != null:
-		forced_done = true; _pass(c, user_ag); return
+		forced_done = true; forced_live = true; _pass(c, user_ag); return
 	var g := _goal(c.team)
 	var dir := (g - c.pos).normalized()
 	var pr := _pressure(c)
 	if cfg.get("involve", "") == "attack" and not forced_done and c.team == 0 and not c.user and user_ag != null:
 		c.tgt = c.pos + dir * 3
-		if pr != Vector2.ZERO and pr.length() < 2.5 and t > .5: forced_done = true; _pass(c, user_ag); return
-		_tackles(c); return
+		if pr != Vector2.ZERO and pr.length() < 3.8 and t > .35: forced_done = true; forced_live = true; _pass(c, user_ag); return
+		return
 	c.tgt = c.pos + dir * 6
 	if pr != Vector2.ZERO and pr.length() < 4:
 		c.tgt = c.pos + (dir * .8 - pr.normalized() * .6 + Vector2(dir.y, -dir.x) * (1 if randf() < .5 else -1) * .3).normalized() * 6
 	dec_t -= dt
 	if dec_t <= 0:
 		dec_t = .28
-		if c.user and cfg.get("involve", "") == "attack" and not cfg.get("auto", false): return
+		if c.user and _user_ctrl(): return
 		var dg := c.pos.distance_to(g)
 		var pl := pr.length() if pr != Vector2.ZERO else 99.0
 		var ang: float = abs(c.pos.x - 34) / max(1.0, abs(c.pos.y - g.y))
@@ -290,7 +300,7 @@ func _pass_score(c: Ag, m: Ag) -> float:
 		if o.team == c.team: continue
 		lane = min(lane, _seg_dist(o.pos, c.pos, m.pos)); open = min(open, o.pos.distance_to(m.pos))
 	var dist := c.pos.distance_to(m.pos)
-	return prog * .07 + clamp((lane - 1.0) / 4.0, 0, 1) * 1.2 + clamp((open - 1.5) / 5.0, 0, 1) * .9 - dist * .012 + (.5 if m.user and cfg.get("involve", "") == "attack" else 0.0)
+	return prog * .07 + clamp((lane - 1.0) / 4.0, 0, 1) * 1.2 + clamp((open - 1.5) / 5.0, 0, 1) * .9 - dist * .012 + (.6 if m.user and _user_ctrl() else 0.0)
 
 func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
 	var ab := b - a; var l2 := ab.length_squared()
@@ -299,13 +309,14 @@ func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
 	return p.distance_to(a + ab * tt)
 
 func _tackles(c: Ag) -> void:
+	if c.user and burst > 0: return
 	for a in ag:
 		if a.team == c.team or a.stun > 0 or a.tk_cd > 0 or a.gk: continue
 		if a.user and cfg.get("involve", "") == "defend" and not cfg.get("auto", false): continue
 		if a.pos.distance_to(c.pos) < 1.4:
 			a.tk_cd = .85
 			var p: float = clamp(.13 + (a.sav - c.drip) / 250.0, .05, .32)
-			if c.user and _user_ctrl(): p *= 1.15
+			if c.user and _user_ctrl(): p *= 1.1
 			if randf() < p:
 				c.stun = .6
 				if c.user: res.rd -= .15; _msg("Top kaptırıldı", UI.RED)
@@ -335,7 +346,7 @@ func _pass(c: Ag, m: Ag, to_point = null) -> void:
 	bvel = dir * sp; bpos = c.pos + dir * .8; bz = 0.02 if bvz == 0 else .2
 	if c.user: res.rd += .08
 	last_passer = c; intended = m; carrier = null; last_touch_team = c.team; bcurve = 0
-	if not headless: Sfx.play("kick")
+	if not headless: Sfx.play("pass")
 	if m != null: m.run = true
 
 func _shoot(c: Ag, aim: Vector2, az: float, sp: float, curve: float) -> void:
@@ -350,13 +361,16 @@ func _shoot(c: Ag, aim: Vector2, az: float, sp: float, curve: float) -> void:
 	shot = {"by": c, "team": c.team, "sp": sp, "t0": t, "saved": false}
 	last_passer = last_passer if last_passer != c else null
 	carrier = null; intended = null; last_touch_team = c.team
-	if not headless: Sfx.play("kick")
+	if not headless:
+		Sfx.play("shot")
+		if sp > 23: Sfx.play("whoosh")
+		if abs(curve) > 5 and c.user: _msg("Falso", UI.YEL, .9)
 
 func _ball(dt: float) -> void:
 	if carrier != null: return
 	var prev := bpos
 	if bcurve != 0 and bvel.length() > 4:
-		bvel += Vector2(-bvel.y, bvel.x).normalized() * bcurve * dt; bcurve *= exp(-1.2 * dt)
+		bvel += Vector2(-bvel.y, bvel.x).normalized() * bcurve * dt; bcurve *= exp(-.7 * dt)
 	bpos += bvel * dt
 	if bz > 0 or bvz != 0:
 		bz += bvz * dt; bvz -= 9.8 * dt
@@ -392,7 +406,7 @@ func _ball(dt: float) -> void:
 					bvel = Vector2(randf_range(-1, 1) * 9, -_fwd(shot.team) * randf_range(3, 8)); bvz = 3; bz = .5
 					if shot.by.user: res.u_shot = "save"
 					_end("", "Kaleci kurtardı.", 1.1); _msg("Kurtarış", UI.RED)
-					if not headless: Sfx.play("save")
+					if not headless: Sfx.play("save"); Sfx.play("ooh")
 					return
 	# kale çizgisi / taç
 	if bpos.y < 0 or bpos.y > PL:
@@ -401,8 +415,11 @@ func _ball(dt: float) -> void:
 			_scored(team_scoring); return
 		if abs(abs(bpos.x - 34) - GHW) < .25 and bz < GH + .2:
 			if shot != null and shot.by.user: res.u_shot = "post"
-			_end("", "Top direkten döndü.", 1.0); _msg("Direk", UI.YEL); return
+			_end("", "Top direkten döndü.", 1.0); _msg("Direk", UI.YEL)
+			if not headless: Sfx.play("post"); Sfx.play("ooh")
+			return
 		if shot != null and shot.by.user: res.u_shot = "miss"
+		if shot != null and not headless and abs(bpos.x - 34) < 9: Sfx.play("ooh", -6)
 		_end("", "Top auta çıktı." if shot != null else "Top oyun alanını terk etti.", .8); return
 	if bpos.x < 0 or bpos.x > PW:
 		_end("", "Top taça çıktı.", .7); return
@@ -419,7 +436,7 @@ func _ball(dt: float) -> void:
 				if a.team == last_touch_team and spd < 14 and (intended == null or spd < 3):
 					_receive(a); return
 				if a.team != last_touch_team:
-					var p: float = (.16 if spd < 10 else .035) * (a.sav / 60.0) * (.35 if intended != null and intended.user else 1.0)
+					var p: float = (.16 if spd < 10 else .035) * (a.sav / 60.0) * ((0.0 if forced_live else .35) if intended != null and intended.user else 1.0)
 					if a.gk: p = .9
 					if randf() < p:
 						if last_passer != null and last_passer.user: res.rd -= .15; _msg("Pas kesildi", UI.RED)
@@ -429,6 +446,7 @@ func _ball(dt: float) -> void:
 		if n != null and n.pos.distance_to(bpos) < 1.6: _receive(n)
 
 func _receive(a: Ag) -> void:
+	forced_live = false
 	if a.user: res.u_touch = true
 	if shot != null and a.gk and a.team != shot.team:
 		if shot.by.user: res.u_shot = "save"
@@ -453,7 +471,7 @@ func _scored(team: int) -> void:
 		if cfg.get("involve", "") == "defend": res.rd -= .3
 	if by != null and by.user: res.u_shot = "goal"
 	_msg("GOL", UI.YEL)
-	if not headless: Sfx.play("goal"); Input.vibrate_handheld(90)
+	if not headless: Sfx.play("net"); Sfx.play("goal"); Input.vibrate_handheld(90)
 	_end(res.goal, txt, 1.4)
 	if not headless and frames.size() > 30: state = "replay_wait"
 
@@ -469,7 +487,7 @@ func _finish() -> void:
 	if not headless: queue_free()
 
 func _user_ctrl() -> bool:
-	return user_ag != null and not cfg.get("auto", false) and cfg.get("involve", "") == "attack"
+	return user_ag != null and not cfg.get("auto", false) and (cfg.get("involve", "") == "attack" or cfg.get("involve", "") == "free")
 
 ## Hızlı mod: görsel olmadan sonuna kadar çalıştır.
 func simulate() -> Dictionary:
@@ -506,7 +524,10 @@ func _process(delta: float) -> void:
 	var spd := 1.0
 	var inv: String = cfg.get("involve", "none")
 	if inv == "none": spd = 1.6
-	if _user_ctrl() and carrier == user_ag: spd = .3
+	if _user_ctrl() and carrier == user_ag:
+		spd = .85 if follow else .6
+		for o in ag:
+			if o.team == 1 and o.pos.distance_to(user_ag.pos) < 4.5 and not follow: spd = .42; break
 	if inv == "defend" and carrier != null and carrier.team == 1 and carrier.pos.y > 62: spd = .55
 	if state == "replay_wait":
 		end_t -= delta
@@ -531,12 +552,12 @@ func _update_hint() -> void:
 	var inv: String = cfg.get("involve", "none")
 	var h := ""
 	if _user_ctrl():
-		if carrier == user_ag: h = "Takım arkadaşının üstüne sürükle: pas. Kalenin içine sürükle: şut. Boş yere dokun: topla koş."
+		if carrier == user_ag: h = "Basılı sürükle: top sür. Hızlı kaydır: pas ya da şut (kavisli = falso). Kısa kaydır: çalım. Arkadaşına dokun: pas."
 		elif user_ag != null: h = "Sarı halkalı oyuncu sensin. Top sana gelecek."
 	elif inv == "defend" and not cfg.get("auto", false):
 		var c = carrier
 		if c != null and c.team == 1 and user_ag.pos.distance_to(c.pos) < 2.6: h = "Şimdi rakibe dokun: kay!"
-		else: h = "Dokunduğun yere koşarsın. Rakibe yaklaşınca üstüne dokunup kay."
+		else: h = "Basılı sürükle: koş. Rakibin üstüne dokun: müdahale. Ona doğru hızlı kaydır: kayarak gir."
 	hint_l.text = h
 
 func _layout() -> void:
@@ -555,24 +576,146 @@ func _gui_input(e: InputEvent) -> void:
 	if state != "play":
 		if state == "replay" and e is InputEventMouseButton and e.pressed: _finish()
 		return
-	var inv: String = cfg.get("involve", "none")
+	var defend: bool = cfg.get("involve", "") == "defend" and not cfg.get("auto", false)
+	var attack := _user_ctrl()
+	if not (defend or attack): return
 	if e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT:
 		if e.pressed:
-			u_drag = [[e.position, Time.get_ticks_msec()]]
+			u_drag = [[e.position, Time.get_ticks_msec()]]; follow = false; press_t = Time.get_ticks_msec()
 		else:
 			if u_drag.is_empty(): return
 			u_drag.append([e.position, Time.get_ticks_msec()])
-			var a: Vector2 = u_drag[0][0]; var b: Vector2 = e.position
-			var ln := a.distance_to(b)
-			if inv == "defend" and not cfg.get("auto", false):
-				_defend_tap(_P(b))
-			elif _user_ctrl() and carrier == user_ag:
-				if ln < 22: u_target = _P(b)
-				else: _user_release(_P(b), ln, max(30.0, u_drag[u_drag.size() - 1][1] - u_drag[0][1]))
-			u_drag = []
+			_gesture(defend)
+			u_drag = []; follow = false
 	elif e is InputEventMouseMotion and not u_drag.is_empty():
 		u_drag.append([e.position, Time.get_ticks_msec()])
-		if u_drag.size() > 60: u_drag.remove_at(1)
+		if u_drag.size() > 80: u_drag.remove_at(1)
+		var held := Time.get_ticks_msec() - press_t
+		var moved: float = u_drag[0][0].distance_to(e.position)
+		# yavaş sürükleme: parmağı takip et (top sür / koş)
+		if held > 200 and (follow or moved > 10):
+			var sp_px: float = _recent_speed()
+			if sp_px < 1.1 or follow:
+				follow = true; u_target = _P(e.position)
+
+func _recent_speed() -> float:
+	if u_drag.size() < 2: return 0.0
+	var last = u_drag[u_drag.size() - 1]; var i := u_drag.size() - 2
+	while i > 0 and last[1] - u_drag[i][1] < 90: i -= 1
+	var dt: float = max(1.0, last[1] - u_drag[i][1])
+	return last[0].distance_to(u_drag[i][0]) / dt
+
+func _gesture(defend: bool) -> void:
+	var a: Vector2 = u_drag[0][0]; var b: Vector2 = u_drag[u_drag.size() - 1][0]
+	var dur: float = max(1.0, u_drag[u_drag.size() - 1][1] - u_drag[0][1])
+	var ln := a.distance_to(b)
+	var vsp := _recent_speed()
+	# fiske başlangıcını bul: hızlı kısmın başı
+	var fs := 0
+	if follow:
+		fs = u_drag.size() - 2
+		while fs > 0 and u_drag[u_drag.size() - 1][1] - u_drag[fs][1] < 220: fs -= 1
+	var fa: Vector2 = u_drag[fs][0]
+	var fln := fa.distance_to(b)
+	var fdur: float = max(1.0, u_drag[u_drag.size() - 1][1] - u_drag[fs][1])
+	var is_flick := (not follow and dur < 300 and ln > 48) or (follow and vsp > 1.3 and fln > 48)
+	if defend:
+		if is_flick: _slide(_P(b) - _P(fa))
+		elif ln < 22 and dur < 320: _defend_tap(_P(b))
+		return
+	if carrier != user_ag:
+		if ln < 22: u_target = null
+		return
+	if is_flick:
+		_flick(fa, b, fln, fln / fdur, fs)
+	elif ln >= 18 and ln < 48 and dur < 240:
+		_skill((_P(b) - _P(a)).normalized())
+	elif ln < 18 and dur < 320:
+		_tap(_P(b))
+
+func _tap(p: Vector2) -> void:
+	var c: Ag = user_ag
+	for m in ag:
+		if m.team == 0 and m != c and not m.gk and m.pos.distance_to(p) < 3.5:
+			_pass(c, m); return
+	u_target = p
+
+func _skill(dir: Vector2) -> void:
+	var c: Ag = user_ag
+	burst = .32; c.vel = dir * c.spd * 1.6; u_target = c.pos + dir * 5
+	var beaten := 0; var lost := false
+	for o in ag:
+		if o.team != 1 or o.gk or o.stun > 0: continue
+		if o.pos.distance_to(c.pos) < 3.2:
+			var p: float = clamp(.38 + (c.drip - o.sav) / 110.0, .15, .82)
+			if randf() < p: o.stun = .8; beaten += 1
+			elif randf() < .5: lost = true
+	if lost:
+		res.rd -= .15; _msg("Çalım tutmadı", UI.RED); c.stun = .5
+		var n = _nearest_team(1, c.pos); if n != null: _take(n)
+	elif beaten > 0:
+		res.rd += .25 * beaten; _msg("Çalım", UI.YEL, .8)
+		if not headless: Sfx.play("swoosh"); Sfx.play("cheer", -10)
+	else:
+		if not headless: Sfx.play("swoosh", -4)
+
+func _flick(fa: Vector2, b: Vector2, fln: float, vsp: float, fs: int) -> void:
+	var c: Ag = user_ag
+	var d := (_P(b) - _P(fa)).normalized()
+	# kavis: fiske yolunun ortadan sapması
+	var ch := b - fa; var dev := 0.0
+	for i in range(fs, u_drag.size()):
+		var q: Vector2 = u_drag[i][0]
+		var dd: float = (ch.x * (q.y - fa.y) - ch.y * (q.x - fa.x)) / max(1.0, ch.length())
+		if abs(dd) > abs(dev): dev = dd
+	var curve: float = clamp(-dev / max(1.0, ch.length()) * 50.0, -20, 20)
+	var dg := c.pos.distance_to(_goal(0))
+	if d.y < -.15 and dg < 46:
+		var tt := (c.pos.y - 0.0) / (-d.y)
+		var hit_x := c.pos.x + d.x * tt
+		if abs(hit_x - 34) < 12:
+			var spd: float = clamp(15 + vsp * 7.5, 15, 33)
+			var az: float = clamp((fln - 60) / 340.0 * 2.8, .05, 3.4)
+			res.u_shot = "shot"
+			_shoot(c, Vector2(hit_x, 0), az, spd, curve)
+			return
+	# pas: fiske yönündeki en uygun arkadaş
+	var best = null; var bs := -9.0
+	for m in ag:
+		if m.team != 0 or m == c or m.gk: continue
+		var to: Vector2 = m.pos - c.pos
+		var cosang := d.dot(to.normalized())
+		if cosang < .87: continue
+		var sc2 := cosang * 2.0 - to.length() / 45.0
+		if sc2 > bs: bs = sc2; best = m
+	var dist: float = clamp(fln / sc * 1.25, 7, 45)
+	if best != null and abs(best.pos.distance_to(c.pos) - dist) < 14:
+		_pass(c, best)
+	else:
+		var near = null; var nd := 1e9; var tp := c.pos + d * dist
+		for m in ag:
+			if m.team != 0 or m == c or m.gk: continue
+			var dd2: float = m.pos.distance_to(tp)
+			if dd2 < nd: nd = dd2; near = m
+		_pass(c, near, tp)
+	bcurve = curve * .5
+
+func _slide(dv: Vector2) -> void:
+	var c = carrier
+	if user_ag.stun > 0: return
+	if c == null or c.team != 1:
+		u_target = user_ag.pos + dv.normalized() * 6; return
+	var d: float = user_ag.pos.distance_to(c.pos)
+	if d > 4.2: u_target = c.pos; return
+	user_ag.vel = (c.pos - user_ag.pos).normalized() * 10
+	var pr: float = clamp(.5 + (user_ag.sav - c.drip) / 140.0 - max(0.0, d - 1.5) * .14, .12, .85)
+	user_ag.tk_cd = .8
+	if randf() < pr:
+		res.rd += .4; _msg("Kayarak müdahale", UI.YEL); c.stun = .9; _take(user_ag)
+		if not headless: Sfx.play("kick", -4); Sfx.play("cheer", -6)
+		if state != "end": _end("", "Kayarak topu temiz aldın.", .9)
+	else:
+		user_ag.stun = 1.4; res.rd -= .15; _msg("Kaçırdın", UI.RED)
 
 func _defend_tap(p: Vector2) -> void:
 	var c = carrier
@@ -582,47 +725,11 @@ func _defend_tap(p: Vector2) -> void:
 		user_ag.tk_cd = .6
 		if randf() < pr:
 			res.rd += .35; _msg("Temiz müdahale", UI.YEL); c.stun = .8; _take(user_ag)
-			if state != "end": _end("", "Kayarak topu temiz aldın.", .9)
+			if state != "end": _end("", "Topu temiz aldın.", .9)
 		else:
 			user_ag.stun = 1.0; res.rd -= .1; _msg("Kaçırdın", UI.RED)
 		return
 	u_target = p
-
-func _user_release(p: Vector2, ln_px: float, dur_ms: float) -> void:
-	var c: Ag = user_ag
-	# kale içine bırakıldıysa şut
-	var gy := 0.0
-	var in_goal_zone: bool = p.y < 7.5 and abs(p.x - 34) < 14
-	var mate = null; var md := 6.0
-	for m in ag:
-		if m.team != 0 or m == c or m.gk: continue
-		var d: float = m.pos.distance_to(p)
-		if d < md: md = d; mate = m
-	if in_goal_zone:
-		var dir := (p - c.pos).normalized()
-		if dir.y >= -.05: dir.y = -.2; dir = dir.normalized()
-		var tt := (c.pos.y - gy) / (-dir.y)
-		var hit_x := c.pos.x + dir.x * tt
-		var dev := 0.0
-		var a0: Vector2 = u_drag[0][0]; var a1: Vector2 = u_drag[u_drag.size() - 1][0]
-		var ch := a1 - a0
-		for q in u_drag:
-			var dd: float = (ch.x * (q[0].y - a0.y) - ch.y * (q[0].x - a0.x)) / max(1.0, ch.length())
-			if abs(dd) > abs(dev): dev = dd
-		var curve: float = clamp(-dev / max(1.0, ch.length()) * 22.0, -10, 10)
-		var spd: float = clamp(16 + ln_px / dur_ms * 9.0, 16, 32)
-		var az: float = clamp((2.0 - p.y) / 4.0 * 2.4, 0.05, 3.4)
-		_shoot(c, Vector2(hit_x, gy), az, spd, curve)
-		res.u_shot = "shot"
-		return
-	if mate != null: _pass(c, mate); return
-	# boşluğa pas: en yakın takım arkadaşı koşsun
-	var near = null; var nd := 1e9
-	for m in ag:
-		if m.team != 0 or m == c or m.gk: continue
-		var d: float = m.pos.distance_to(p)
-		if d < nd: nd = d; near = m
-	_pass(c, near, p)
 
 func _msg(t: String, col: Color, dur: float = 1.2) -> void:
 	msg = t; msg_col = col; msg_until = Time.get_ticks_msec() / 1000.0 + dur
@@ -662,6 +769,9 @@ func _draw() -> void:
 		var a: Ag = ag[i]; var p := _S(pos_list[i])
 		var col: Color = gk_cols[a.team] if a.gk else cols[a.team]
 		draw_circle(p + Vector2(2, 3), r, Color(0, 0, 0, .3))
+		if a.user: draw_circle(p, r * 1.9, Color(UI.YEL, .14))
+		var fv: Vector2 = a.vel.normalized() if a.vel.length() > .4 else Vector2(0, _fwd(a.team))
+		draw_colored_polygon(PackedVector2Array([p + fv * r * 1.55, p + fv.rotated(2.3) * r * .9, p + fv.rotated(-2.3) * r * .9]), Color(1, 1, 1, .85))
 		draw_circle(p, r, col)
 		draw_arc(p, r, 0, TAU, 24, col.darkened(.45), max(1.5, sc * .14), true)
 		var tc := UI.INK if UI.lum(col) > .6 else Color.WHITE
@@ -671,17 +781,18 @@ func _draw() -> void:
 			draw_arc(p, r + 4 + pul * 3, 0, TAU, 32, UI.YEL, 4, true)
 			draw_string(fd, p + Vector2(-80, -r - 12), cfg.get("uname_short", "SEN"), HORIZONTAL_ALIGNMENT_CENTER, 160, 24, UI.YEL)
 		if a.stun > 0: draw_arc(p, r + 3, 0, TAU, 16, Color(1, 1, 1, .5), 2)
-	# sürükleme önizlemesi
-	if _user_ctrl() and carrier == user_ag and u_drag.size() > 1:
+	# parmak izi
+	if u_drag.size() > 1 and state == "play":
 		var pl := PackedVector2Array()
 		for q in u_drag: pl.append(q[0])
-		draw_polyline(pl, Color(UI.YEL, .9), 5, true)
-		var endp := _P(u_drag[u_drag.size() - 1][0])
-		for m in ag:
-			if m.team == 0 and m != user_ag and not m.gk and m.pos.distance_to(endp) < 6:
-				draw_arc(_S(m.pos), r + 6, 0, TAU, 28, Color.WHITE, 3)
-		if endp.y < 7.5 and abs(endp.x - 34) < 14:
-			draw_rect(Rect2(_S(Vector2(34 - GHW, -2.2)), Vector2(GHW * 2, 2.2) * sc), Color(UI.YEL, .45))
+		draw_polyline(pl, Color(UI.YEL, .85) if not follow else Color(1, 1, 1, .5), 6 if not follow else 3, true)
+	# top izi (falso burada görünür)
+	if trail.size() > 2 and state == "play" or state == "end":
+		if trail.size() > 2:
+			var tp := PackedVector2Array(); var tc := PackedColorArray()
+			for i in trail.size():
+				tp.append(_S(trail[i][0]) - Vector2(0, trail[i][1] * sc * .55)); tc.append(Color(1, 1, 1, float(i) / trail.size() * .6))
+			draw_polyline_colors(tp, tc, max(2.0, sc * .22), true)
 	if u_target != null and state == "play":
 		draw_arc(_S(u_target), 10, 0, TAU, 16, Color(1, 1, 1, .7), 3)
 	# top
@@ -714,5 +825,5 @@ func _draw() -> void:
 		var big := msg == "GOL" or msg == "Tekrar"
 		var fs := 120 if msg == "GOL" else (72 if big else 46)
 		var y: float = size.y * .45 if big else area.position.y + 90
-		draw_string_outline(fd, Vector2(0, y), msg, HORIZONTAL_ALIGNMENT_CENTER, size.x, fs, 14, UI.INK)
-		draw_string(fd, Vector2(0, y), msg, HORIZONTAL_ALIGNMENT_CENTER, size.x, fs, msg_col)
+		draw_string_outline(fd, Vector2(0, y), msg.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, size.x, fs, 14, UI.DARK)
+		draw_string(fd, Vector2(0, y), msg.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, size.x, fs, msg_col)

@@ -1,0 +1,7 @@
+Yazı tipleri ve ikonlar
+- Barlow, Barlow Condensed, Big Shoulders Display: SIL Open Font License 1.1 (fontsource paketlerinden)
+- Material Icons (Round): Apache License 2.0, Google (LICENSE-material-icons.txt)
+
+Sesler (sounds/)
+- kick_*, pass*, whoosh, swoosh, save, ui_*, coin, levelup, victory, defeat, powerup: Meta Open Sound "Oculus Audio Pack", CC0 1.0 (kayıtlar işlenip katmanlandı)
+- crowd_*, goal_roar, whistle*, post, net: bu proje için fiziksel modelle üretildi (CC0)

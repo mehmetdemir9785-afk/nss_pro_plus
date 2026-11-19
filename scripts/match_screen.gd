@@ -48,11 +48,13 @@ func _live(inv: String, att: int) -> void:
 		"ustats": {"sut": G.eff("sut"), "pas": G.eff("pas"), "drip": G.eff("drip"), "hiz": G.eff("hiz"), "sav": G.eff("sav")},
 		"title": "%d'   %s %d - %d %s" % [minute, H.name, hs, as_, A.name]})
 	var r
-	if fast and (inv == "none" or auto):
+	if fast and (inv == "none" or inv == "free" or auto):
 		r = P.simulate(); P.free()
 	else:
+		Sfx.crowd(true, .7)
 		add_child(P); P.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 		r = await P.finished
+		Sfx.crowd(true, .4)
 	if r.goal == "me":
 		if on and r.u_goal: g += 1
 		if on and r.u_assist: a += 1
@@ -68,6 +70,7 @@ func _live(inv: String, att: int) -> void:
 		if r.u_shot == "save": feed("Şutun kaleciden döndü.")
 		elif r.u_shot == "miss": feed("Şutun auta gitti.")
 	elif on and (r.u_goal or r.u_assist): _addr(r.rd)
+	if inv == "free" and r.u_touch: _addr(r.rd * .6)
 	await _wait(.05 if fast else .35)
 
 const FILL := ["{op} tehlikeli bir korner kullandı, savunma uzaklaştırdı.", "Orta sahada sert mücadele, hakem faul çaldı.", "{me} topa sahip, oyunu sabırla kuruyor.", "{op} kalecisi uzun bir degajla oyunu başlattı.", "Tribünler coştu, müthiş bir atmosfer var.", "{op} oyuncusu sarı kart gördü.", "{me} soldan etkili bir atak geliştirdi, top auta çıktı.", "{op} uzaktan şut denedi, top üstten auta gitti.", "Oyun bir süre durdu, sakatlanan oyuncuya müdahale ediliyor.", "{me} kalecisi kritik bir kurtarış yaptı.", "{op} ofsayta yakalandı.", "Hakem avantaja bıraktı, oyun devam ediyor."]
@@ -117,32 +120,30 @@ func _build() -> void:
 	sc.add_child(UI.margin(v, 32, 30, 32, 60))
 	sc.get_child(0).size_flags_horizontal = SIZE_EXPAND_FILL
 	# skorbord
-	var board := UI.panel(Color("07100B"), 12, 6, Color("23332B"), Vector4(20, 22, 20, 22))
+	var board := UI.card(Vector4(20, 22, 20, 22), Color(UI.DEEP, .9))
 	var bv := UI.vbox(10)
 	bv.add_child(UI.lbl(m.label, 26, UI.CHALK2, false, 500, HORIZONTAL_ALIGNMENT_CENTER))
 	var row := UI.hbox(6)
 	var H = sd.me if home else sd.op; var A = sd.op if home else sd.me
 	row.add_child(_team_col(H))
-	sc_l = UI.lbl("0 - 0", 136, UI.YEL, true, 900, HORIZONTAL_ALIGNMENT_CENTER, false); sc_l.custom_minimum_size = Vector2(250, 0); sc_l.size_flags_vertical = SIZE_SHRINK_CENTER
+	sc_l = UI.lbl("0 - 0", 120, UI.CHALK, true, 900, HORIZONTAL_ALIGNMENT_CENTER, false); sc_l.custom_minimum_size = Vector2(250, 0); sc_l.size_flags_vertical = SIZE_SHRINK_CENTER
 	row.add_child(sc_l)
 	row.add_child(_team_col(A))
 	bv.add_child(row)
 	min_l = UI.lbl("0'", 48, UI.CHALK, true, 800, HORIZONTAL_ALIGNMENT_CENTER); bv.add_child(min_l)
-	tl_bar = UI.Bar.new(0, UI.YEL, 8); tl_bar.track = Color("1B2721"); bv.add_child(tl_bar)
+	tl_bar = UI.Bar.new(0, UI.ACC, 8); bv.add_child(tl_bar)
 	st_l = UI.lbl("", 26, UI.CHALK2, false, 500, HORIZONTAL_ALIGNMENT_CENTER); bv.add_child(st_l)
 	board.add_child(bv); v.add_child(board)
 	mom = UI.vbox(0); v.add_child(mom)
 	ctl = UI.hbox(16)
-	b_fast = UI.btn("Hızlı", "out", func(): fast = not fast; _tog(b_fast, fast), "", 34); b_fast.size_flags_horizontal = SIZE_EXPAND_FILL
-	b_auto = UI.btn("Anları otomatik oyna", "out", func(): auto = not auto; _tog(b_auto, auto), "", 34); b_auto.size_flags_horizontal = SIZE_EXPAND_FILL
+	b_fast = UI.btn("Hızlı", "out", func(): fast = not fast; _tog(b_fast, fast), "", 30, false, false, "fast"); b_fast.size_flags_horizontal = SIZE_EXPAND_FILL
+	b_auto = UI.btn("Otomatik", "out", func(): auto = not auto; _tog(b_auto, auto), "", 30, false, false, "auto"); b_auto.size_flags_horizontal = SIZE_EXPAND_FILL
 	ctl.add_child(b_fast); ctl.add_child(b_auto); v.add_child(ctl)
 	feed_box = UI.vbox(0); v.add_child(feed_box)
 	_upd()
 
 func _tog(b: Button, st: bool) -> void:
-	var s: StyleBoxFlat = b.get_theme_stylebox("normal").duplicate(); s.bg_color = UI.CHALK if st else Color.TRANSPARENT
-	for n in ["normal", "hover", "pressed", "focus"]: b.add_theme_stylebox_override(n, s)
-	var l: Label = b.get_child(0).get_child(0); l.add_theme_color_override("font_color", UI.INK if st else UI.CHALK)
+	b.kind = "chalk" if st else "out"; b.queue_redraw()
 
 func _team_col(t) -> VBoxContainer:
 	var c := UI.vbox(8); c.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -170,13 +171,14 @@ func feed(t: String, cls := "") -> void:
 		var bc := UI.YEL if cls == "goal" else UI.RED
 		st.border_color = bc
 	var h := UI.hbox(16)
-	var ml := UI.lbl("%d'" % minute, 34, UI.YEL, true, 800, HORIZONTAL_ALIGNMENT_LEFT, false); ml.custom_minimum_size = Vector2(66, 0); h.add_child(ml)
+	var ml := UI.lbl("%d'" % minute, 32, UI.ACC, true, 900, HORIZONTAL_ALIGNMENT_LEFT, false); ml.custom_minimum_size = Vector2(66, 0); h.add_child(ml)
 	var tx := UI.lbl(t, 29, Color("F4DE93") if cls == "me" else UI.CHALK, false, 700 if cls == "goal" else 500); tx.size_flags_horizontal = SIZE_EXPAND_FILL; h.add_child(tx)
 	row.add_child(h)
 	feed_box.add_child(row); feed_box.move_child(row, 0)
 	if feed_box.get_child_count() > 40: feed_box.get_child(feed_box.get_child_count() - 1).queue_free()
 
 func _run() -> void:
+	Sfx.crowd(true, .4)
 	Sfx.play("whistle"); feed("Hakem düdüğü çaldı, maç başladı.")
 	for mn in range(1, 91):
 		minute = mn; _upd()
@@ -185,7 +187,7 @@ func _run() -> void:
 		if mn == 45:
 			feed("İlk yarı sona erdi."); await _wait(.06 if fast else .6)
 		await _wait(.018 if fast else .115)
-	Sfx.play("whistle"); feed("Maç sona erdi.")
+	Sfx.play("whistle_end"); feed("Maç sona erdi.")
 	if m.ko and score.me == score.op: await _shootout()
 	_finish()
 
@@ -194,7 +196,7 @@ func _goal(side: String, txt: String) -> void:
 	if side == "me":
 		feed(txt, "goal")
 		if on: rat += .12
-		if not fast: Sfx.play("goal")
+		if not fast: Sfx.play("cheer")
 	else:
 		feed(txt, "og")
 		if on: rat -= .3 if G.S.p.pos == "DF" else .08
@@ -213,7 +215,7 @@ func _handle(ev: Dictionary) -> void:
 			if on: await _moment(ev.t)
 		"ch":
 			feed(("%s atağa çıkıyor." % sd.me.name) if ev.s == "me" else ("%s tehlikeli geliyor." % sd.op.name))
-			await _live("none", 0 if ev.s == "me" else 1)
+			await _live("free" if (on and ev.s == "me") else "none", 0 if ev.s == "me" else 1)
 
 func _op() -> float: return sd.op.str
 func _efac() -> float:
@@ -233,8 +235,8 @@ func _addr(d: float) -> void: rat = clamp(rat + d, 3, 10); _upd()
 
 func _paper() -> PanelContainer:
 	for c in mom.get_children(): c.queue_free()
-	var p := UI.panel(UI.PAPER, 12, 0, Color.TRANSPARENT, Vector4(32, 30, 32, 30))
-	var st: StyleBoxFlat = p.get_theme_stylebox("panel"); st.border_width_top = 16; st.border_color = Color(G.my_team().col) if UI.lum(Color(G.my_team().col)) < .8 else UI.YEL
+	var p := UI.card(Vector4(30, 28, 30, 30), Color(UI.PAPER, .96))
+	var st: StyleBoxFlat = p.get_theme_stylebox("panel"); st.border_width_top = 5; st.border_color = UI.ACC
 	mom.add_child(p)
 	return p
 
@@ -275,7 +277,7 @@ func _do_shot(k: String, at: String, intro: String) -> void:
 
 func _flash(t: String) -> void:
 	var l := UI.lbl(t, 260, UI.YEL, true, 900, HORIZONTAL_ALIGNMENT_CENTER, false)
-	l.add_theme_constant_override("outline_size", 18); l.add_theme_color_override("font_outline_color", UI.INK)
+	l.add_theme_constant_override("outline_size", 18); l.add_theme_color_override("font_outline_color", UI.DARK)
 	add_child(l); l.set_anchors_and_offsets_preset(PRESET_CENTER); l.grow_horizontal = GROW_DIRECTION_BOTH; l.grow_vertical = GROW_DIRECTION_BOTH
 	l.pivot_offset = l.size / 2; l.scale = Vector2(.6, .6); l.modulate.a = 0
 	var tw := create_tween()
@@ -408,15 +410,15 @@ func _finish() -> void:
 	ctl.visible = false
 	var p := _paper()
 	var v := UI.vbox(14); p.add_child(v)
-	v.add_child(UI.lbl("Galibiyet" if r.won else ("Beraberlik" if r.res == "D" else "Mağlubiyet"), 72, UI.INK, true, 900))
+	v.add_child(UI.lbl(("Galibiyet" if r.won else ("Beraberlik" if r.res == "D" else "Mağlubiyet")).to_upper(), 72, UI.ACC if r.won else (UI.CHALK if r.res == "D" else UI.RED), true, 900))
 	v.add_child(UI.lbl(r.desc, 30, UI.INK2))
 	if r.extra != "": v.add_child(UI.lbl(r.extra, 44, UI.INK, true, 900))
 	if played:
 		var h := UI.hbox(12)
-		var rc := UI.GOLDINK if r.rating >= 8 else (UI.INK if r.rating >= 5.5 else Color("C21F35"))
+		var rc := Color("3DDC84") if r.rating >= 8 else (UI.CHALK if r.rating >= 5.5 else UI.RED)
 		for it in [[G.r1(r.rating), "Reyting", rc], [str(g), "Gol", UI.INK], [str(a), "Asist", UI.INK], ["+%d" % r.gp, "GP", UI.INK]]:
 			var c := UI.panel(Color.TRANSPARENT, 0, 0, Color.TRANSPARENT, Vector4(16, 0, 0, 0))
-			var cs: StyleBoxFlat = c.get_theme_stylebox("panel"); cs.border_width_left = 5; cs.border_color = Color(UI.INK, .25)
+			var cs: StyleBoxFlat = c.get_theme_stylebox("panel"); cs.border_width_left = 5; cs.border_color = Color(UI.ACC, .5)
 			c.size_flags_horizontal = SIZE_EXPAND_FILL
 			var cv := UI.vbox(0); cv.add_child(UI.lbl(it[0], 64, it[2], true, 900, HORIZONTAL_ALIGNMENT_LEFT, false)); cv.add_child(UI.lbl(it[1], 23, UI.INK2))
 			c.add_child(cv); h.add_child(c)
@@ -425,5 +427,7 @@ func _finish() -> void:
 		if r.bonus > 0: v.add_child(UI.lbl("Galibiyet primi: +" + G.fmt(r.bonus), 27, UI.INK2))
 	else:
 		v.add_child(UI.lbl("Sakatlığın nedeniyle oynayamadın." if sel == "inj" else ("Hoca seni kadroya almadı. Hocayla ilişkini ve formunu geliştir." if sel == "out" else "Bu maçta süre alamadın."), 29, UI.INK2))
-	if r.won: Sfx.play("ach")
+	Sfx.crowd(false)
+	if r.won: Sfx.play("victory")
+	elif r.res == "L": Sfx.play("defeat")
 	v.add_child(UI.btn("Devam", "pri", func(): queue_free(); G.main.match_closed(), "", 52, true))

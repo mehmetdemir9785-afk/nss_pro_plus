@@ -51,7 +51,7 @@ jobs:
       - name: Sürüm sayfasına koy (telefondan kolay indirme)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.${{ github.run_number }}
-          name: Efsane Yolu 1.1.${{ github.run_number }}
+          tag_name: v1.2.${{ github.run_number }}
+          name: Efsane Yolu 1.2.${{ github.run_number }}
           body: Telefonuna indirip kur. Kurulumda "bilinmeyen kaynaklara izin ver" demen gerekebilir.
           files: build/efsane-yolu.apk
